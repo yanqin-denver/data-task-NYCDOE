@@ -1,0 +1,256 @@
+---
+title: "Data Task"
+author: "Yan Qin"
+date: "2019Äê6ÔÂ22ÈÕ"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1. Load Data
+```{r}
+Sys.setlocale('LC_ALL','C')
+path="https://archive.ics.uci.edu/ml/machine-learning-databases/concrete/slump/slump_test.data"
+data = read.delim(path, header = TRUE, sep = ",")
+```
+
+#2. Exploratory Data Analysis
+```{r}
+data = data[,-1]
+dim(data)
+colnames(data)
+names(data)[6:10]=c("Coarse.Aggr", "Fine.Aggr","SLUMP.cm", "FLOW.cm", "Compressive.Strength")
+head(data, 1)
+
+# missing values
+sum(is.na(data)) 
+
+# summary statistics
+summary(data)
+
+# ggplot
+library(ggplot2)
+ggplot(data, aes(Compressive.Strength)) + geom_histogram() # normal distribution
+ggplot(data, aes(SLUMP.cm)) + geom_histogram() 
+ggplot(data, aes(FLOW.cm)) + geom_histogram()
+
+# boxplot
+par(mfrow=c(3,3))
+boxplot(data$Cement, main = "Cement", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$Slag, main = "Slag", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$Fly.ash, main = "Fly Ash", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$Water, main = "Water)", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$SP, main = "SP", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$Coarse.Aggr, main = "Coarse Aggr.", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$Fine.Aggr, main = "Fine Aggr.", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$SLUMP.cm, main = "SLUMP (CM)", xlab = "cm", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$FLOW.cm,main = "FLOW (CM)", xlab = "cm", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+boxplot(data$Compressive.Strength, main = "28-day Compressive Strength (Mpa)", xlab = "MPA", ylab = "Compressive Strength", col = "gray", border = "blue", horizontal = TRUE, notch = TRUE)
+
+# correlation plot
+library("PerformanceAnalytics")
+chart.Correlation(data, histogram=TRUE, pch=19)
+# plot a correlation heatmap
+library(corrplot)
+library(RColorBrewer)
+temp = cor(data)
+corrplot(temp, type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+```
+OUr dataset has 103 obervations and 10 variables in total. 7 of these variables, including "Cement", "Slag", Fly ash", "Water","SP", "Coarse Aggr.", and "Fine Aggr.", are input variables and 3 of these variables, "SLUMP(cm)", "FLOW(cm)", "28-day Compressive Strength (Mpa)" are output variables.
+
+There is no missing values in our dataset.
+
+From the top three ggplot, we can tell that compared to other two output variables, "28-day Compressive Strength (Mpa)" is less skewed and has a bell-shaped distribution (normal distribution), which could be a feasible target variable.
+
+Boxplots show that most of the variables are quite skewed, such as "SP", "Slag" and "SLUMP (cm)". As we stated above, compared to other two output variables, "28-day Compressive Strength (Mpa)" is more normally distributed. 
+
+From the correlation plot and heatmap we can see that Compressive Strength has relatively strong linear relationships with Cement and Fly ash (the associations are statstitically significant). 
+
+
+# 3. Correlations
+```{r}
+# summary statistics of CS
+summary(data$Compressive.Strength)
+
+a = ggplot(data, aes(x = Cement, y = Compressive.Strength)) + geom_point()
+b = ggplot(data, aes(x = Slag, y = Compressive.Strength)) + geom_point()
+c = ggplot(data, aes(x = Fly.ash, y = Compressive.Strength)) + geom_point()
+d = ggplot(data, aes(x = Water, y = Compressive.Strength)) + geom_point()
+e = ggplot(data, aes(x = SP, y = Compressive.Strength)) + geom_point()
+f = ggplot(data, aes(x = Coarse.Aggr, y = Compressive.Strength)) + geom_point()
+g = ggplot(data, aes(x = Fine.Aggr, y = Compressive.Strength)) + geom_point()
+
+library("magrittr")
+library("ggpubr")
+ggarrange(a, b, c, d, e, f, g + rremove("x.text"), 
+          ncol = 4, nrow = 2)
+
+# detects correlation
+x = as.matrix(data[, 1:7])
+y = data$Compressive.Strength
+result = matrix(nrow = 7, ncol = 2, NA)
+for (i in 1:7){
+  res = cor.test(x[,i],y, method="kendall")
+  result[i, ] = c(res$p.value, res$estimate)
+}
+colnames(result) = c("p value", "kendall")
+rownames(result) = colnames(data)[1:7]
+result
+```
+Let's look at the correlation between Cement and Compressive.Strength from the correlation plot (ggplot). Overall, Cement has a moderate positive relationship with Compressive.Strength. The more cement, the more compresive strength. Cement less than 200 has Compressive Stength between 20 and 45. Cement above 200 has Compressive Strength between 25 and 60. 
+
+Cement has a stronger correlation with Compressive.Strength as we run kendall rank correlation test. Its kendall tau is 0.31879910; small p-value (almost 0) indicates a strong significancy of this test. The differnece between correlation test (or correlation plot) and kendall rank correlation test is that the former one adopts pearson's method which could only detect linear correlation between two variables. In our case, nonlinear relationships are suspected. Kendall's correlation would give us a more robust explanation of the relationships/correlations. In conclusion, Cement is most predictive of Compressive.Strength.
+
+# 4. A Single Decision Tree Model
+```{r}
+# cement and fly ash are two important features from the previous step
+# separate them into testing and training sets
+set.seed(1)
+smp_size = floor(2/3 * nrow(data))
+train_ind = sample(seq_len(nrow(data)), size = smp_size)
+train = data[train_ind, ]
+test = data[-train_ind, ]
+nrow(train)
+nrow(test)
+
+library("rpart")
+library("rpart.plot")
+
+# how to determine max_depth
+RMSE = c()
+for (i in 1:4){
+  control = rpart.control(maxdepth = i)
+  tune_fit = rpart(Compressive.Strength~Cement+Fly.ash, data = train, control = control)
+  predict_unseen = predict(tune_fit, test)
+  RMSE[i] = RMSE(predict_unseen, test$Compressive.Strength)
+}
+k = which.min(RMSE)
+k
+control = rpart.control(maxdepth = k)
+best_fit = rpart(Compressive.Strength~Cement+Fly.ash, data = train, control = control)
+predict_unseen = predict(best_fit, test)
+RMSE = RMSE(predict_unseen, test$Compressive.Strength)
+RMSE
+rpart.plot(best_fit)
+```
+Here we only utilize two important features, "Cement" and "Fly.ash", which we've detected in last procedure, to construct the tree model.
+
+From the above plot, we see that the root node is Fly.ash. Let's look at one of the braches from this tree. As we move to the next step, it asks whether the "Fly.ash" is less than 118. If yes, then go to the left child node (depth = 2), and if "Cement" is less than 316, we say the 28-day Compressive Strength is 28, which accounts for 21% of the data.
+
+Looking at the visualization of this tree model, we also find that the depth of this tree is 3, which is noted as the ideal depth as we tune the parameter depth to get the minimized RMSE. RMSE (test error) in our final model is 5.084723.
+
+By its definition, RMSE is the square root of the expected squared difference between the estimated values and what is estimated. This tells us the quality of our model. We would say that our model performs the best as we adopting the idea of minimizing RMSE.
+
+The accuracy score in this case can be measured by RMSE. If we have a classification tree, we would calculate its accuracy score from its confusion matrix. But in the regression cases, we would use RMSE or other measurements to assess the model quality.
+
+# 5. Random Forest 
+```{r}
+library(randomForest)
+library(caret)
+library(e1071)
+forest = randomForest(Compressive.Strength~Cement + Slag + Fly.ash + Water + SP + Coarse.Aggr + Fine.Aggr, data = train, importance = TRUE)
+forest
+plot(forest, main = "Random Forest Models")
+ntree = which.min(forest$mse)
+ntree
+# RMSE of our model:
+sqrt(forest$mse[which.min(forest$mse)])
+
+# tune hyperparameters
+# mtry
+trControl = trainControl(method = "cv", number = 10, search = "grid")
+set.seed(1)
+tuneGrid <- expand.grid(.mtry = c(1: 7))
+rf_mtry <- train(Compressive.Strength~Cement + Slag + Fly.ash + Water + SP + Coarse.Aggr + Fine.Aggr,
+    data = train,
+    method = "rf",
+    tuneGrid = tuneGrid,
+    trControl = trControl,
+    importance = TRUE
+    )
+print(rf_mtry)
+# number of features in model
+best_mtry = rf_mtry$bestTune$mtry
+best_mtry
+# maxnode
+store_maxnode <- list()
+tuneGrid <- expand.grid(.mtry = best_mtry)
+for (maxnodes in c(5: 20)) {
+    set.seed(1)
+    rf_maxnode <- train(Compressive.Strength~Cement + Slag + Fly.ash + Water + SP + Coarse.Aggr + Fine.Aggr,
+        data = train,
+        method = "rf",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        maxnodes = maxnodes
+        )
+    current_iteration <- toString(maxnodes)
+    store_maxnode[[current_iteration]] <- rf_maxnode
+}
+results_node <- resamples(store_maxnode)
+summary(results_node)
+# number of maxnode = 10
+# ntree?
+store_maxtrees <- list()
+for (ntree in c(250, 300, 350, 400, 450, 500, 550, 600, 800, 1000, 2000)) {
+    set.seed(2)
+    rf_maxtrees <- train(Compressive.Strength~Cement + Slag + Fly.ash + Water + SP + Coarse.Aggr + Fine.Aggr,
+        data = train,
+        method = "rf",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        maxnodes = 10,
+        ntree = ntree)
+    key <- toString(ntree)
+    store_maxtrees[[key]] <- rf_maxtrees
+}
+results_tree <- resamples(store_maxtrees)
+summary(results_tree)
+# ntree = 1000
+
+# final model
+fit_rf = train(Compressive.Strength~Cement + Slag + Fly.ash + Water + SP + Coarse.Aggr + Fine.Aggr,
+        data = train,
+        method = "rf",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        maxnodes = 10,
+        nodesize = 14,
+        ntree = 1000
+        )
+predict_unseen= predict(fit_rf, test)
+RMSE = RMSE(predict_unseen, test$Compressive.Strength)
+RMSE
+
+varImp(fit_rf)
+```
+There are 1000 trees, and 7 features in the final model. we first tune the hyperparameter mtry (the number of features) and find that the model that can minimize RMSE is when all 7 input features are included. Knowing the number of features that are included in the model in each tree is 7, we tune the next hyperparameter maxnode (maximum number of nodes), which turns out to be 10. Taking these two hyperparameters into model building, we find that ntree (the number of trees) equals to 1000 would minimize RMSE. This is basically how we select the number of trees and the number of features in the random forest model. 
+
+We train our model using ntree = 1000, mtry = 7, maxnodes = 10. The model yields RMSE = 3.189722. Compared with the test error (RMSE) in the tree model, random forest yields a smaller test error and performs better. However, the number of trees is very large, I would suspect an overfitting issue.
+
+We visualize the feature importance by doing varImp(). It indicates that "Cement" and "Fly.ash" are the two most important features in this model. This result is consistent with the visualization from the corrplots.
+
+# 5. Additional Analysis
+If run additional analysis given this small dataset, we would use logistic regression (since our target variable is continuous), support vector machine (with nonlinear kernal) and neural network.
+We might want to include the exposure time, water temperature, and superplasticizer in our dataset.
+Since most variables in our raw dataset has a skewed distribution, and knowing that water-cement ratio is quite important in guaging compressive strength, we might try to do some variable transformations in preprocessing steps.
+Our model would give the prospective clients an idea of predicting the compressive strength of high performance concrete after 28 days. From the above analyses, we would say that Cement and Fly ash could be used to perform this prediction. Controlling these two factors would greatly affect the compressive stength. 
+
+
+
+
